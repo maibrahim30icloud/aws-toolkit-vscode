@@ -1,49 +1,61 @@
 /*!
- * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 import * as vscode from 'vscode'
 import { ChildNodePage } from '../../awsexplorer/childNodeLoader'
-import { Bucket, CreateFolderRequest, CreateFolderResponse, S3Client } from '../../shared/clients/s3Client'
-
+import {
+    Bucket,
+    CreateFolderRequest,
+    CreateFolderResponse,
+    S3Client,
+    UploadFileRequest,
+} from '../../shared/clients/s3Client'
+import { ext } from '../../shared/extensionGlobals'
 import { AWSResourceNode } from '../../shared/treeview/nodes/awsResourceNode'
 import { AWSTreeNodeBase } from '../../shared/treeview/nodes/awsTreeNodeBase'
+import { ErrorNode } from '../../shared/treeview/nodes/errorNode'
 import { LoadMoreNode } from '../../shared/treeview/nodes/loadMoreNode'
 import { PlaceholderNode } from '../../shared/treeview/nodes/placeholderNode'
-import { makeChildrenNodes } from '../../shared/treeview/utils'
+import { makeChildrenNodes } from '../../shared/treeview/treeNodeUtilities'
 import { localize } from '../../shared/utilities/vsCodeUtils'
 import { ChildNodeLoader } from '../../awsexplorer/childNodeLoader'
+import { Workspace } from '../../shared/vscode/workspace'
 import { S3FileNode } from './s3FileNode'
 import { S3FolderNode } from './s3FolderNode'
 import { inspect } from 'util'
 import { getLogger } from '../../shared/logger'
 import { S3Node } from './s3Nodes'
-import { getIcon } from '../../shared/icons'
-import { Settings } from '../../shared/settings'
-import { ClassToInterfaceType } from '../../shared/utilities/tsUtils'
 
 /**
  * Represents an S3 bucket that may contain folders and/or objects.
  */
 export class S3BucketNode extends AWSTreeNodeBase implements AWSResourceNode, LoadMoreNode {
-    private readonly childLoader = new ChildNodeLoader(this, token => this.loadPage(token))
+    private readonly childLoader: ChildNodeLoader
 
     public constructor(
         public readonly bucket: Bucket,
         public readonly parent: S3Node,
         public readonly s3: S3Client,
-        protected readonly settings: ClassToInterfaceType<Settings> = Settings.instance
+        private readonly workspace = Workspace.vscode()
     ) {
         super(bucket.name, vscode.TreeItemCollapsibleState.Collapsed)
         this.tooltip = bucket.name
-        this.iconPath = getIcon('aws-s3-bucket')
+        this.iconPath = {
+            dark: vscode.Uri.file(ext.iconPaths.dark.s3),
+            light: vscode.Uri.file(ext.iconPaths.light.s3),
+        }
         this.contextValue = 'awsS3BucketNode'
+        this.childLoader = new ChildNodeLoader(this, token => this.loadPage(token))
     }
 
-    public override async getChildren(): Promise<AWSTreeNodeBase[]> {
+    public async getChildren(): Promise<AWSTreeNodeBase[]> {
         return await makeChildrenNodes({
-            getChildNodes: async () => this.childLoader.getChildren(),
+            getChildNodes: async () => 
+                this.childLoader.getChildren(),
+            getErrorNode: async (error: Error, logID: number) =>
+                new ErrorNode(this, error, logID),
             getNoChildrenPlaceholderNode: async () =>
                 new PlaceholderNode(this, localize('AWS.explorerNode.s3.noObjects', '[No Objects found]')),
         })
@@ -61,7 +73,7 @@ export class S3BucketNode extends AWSTreeNodeBase implements AWSResourceNode, Lo
         this.childLoader.clearChildren()
     }
 
-    private async loadPage(continuationToken: string | undefined): Promise<ChildNodePage<S3FolderNode | S3FileNode>> {
+    private async loadPage(continuationToken: string | undefined): Promise<ChildNodePage> {
         getLogger().debug(`Loading page for %O using continuationToken %s`, this, continuationToken)
         const response = await this.s3.listFiles({
             bucketName: this.bucket.name,
@@ -84,6 +96,13 @@ export class S3BucketNode extends AWSTreeNodeBase implements AWSResourceNode, Lo
      */
     public async createFolder(request: CreateFolderRequest): Promise<CreateFolderResponse> {
         return this.s3.createFolder(request)
+    }
+
+    /**
+     * See {@link S3Client.uploadFile}.
+     */
+    public async uploadFile(request: UploadFileRequest): Promise<void> {
+        return this.s3.uploadFile(request)
     }
 
     /**
@@ -111,6 +130,6 @@ export class S3BucketNode extends AWSTreeNodeBase implements AWSResourceNode, Lo
     }
 
     private getMaxItemsPerPage(): number | undefined {
-        return this.settings.getSection('aws').get<number>('s3.maxItemsPerPage')
+        return this.workspace.getConfiguration('aws').get<number>('s3.maxItemsPerPage')
     }
 }
