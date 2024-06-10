@@ -12,5 +12,8 @@
     "typescript.preferences.importModuleSpecifier": "relative",
     "javascript.preferences.importModuleSpecifier": "relative",
     "typescript.tsdk": "node_modules/typescript/lib",
-    "npm.packageManager": "npm"
+    "npm.packageManager": "npm",
+    "marquee.widgets.npm-stats.packageNames": [
+        "root"
+    ]
 }
